@@ -2,10 +2,7 @@ import os
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
-    """Application settings configuration.
-    
-    Uses environment variables with fallback to default values.
-    """
+    """Application settings configuration."""
     # API settings
     APP_NAME: str = "S&P 500 News API"
     API_PREFIX: str = "/api"

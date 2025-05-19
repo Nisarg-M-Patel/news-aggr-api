@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, Enum
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, Enum, Table
 from sqlalchemy.orm import relationship
 import enum
 
@@ -21,6 +21,15 @@ class SentimentEnum(enum.Enum):
     NEGATIVE = "negative"
     NEUTRAL = "neutral"
 
+# Association table for many-to-many relationship between companies and news
+# Using a plain table instead of a class to simplify the relationship
+company_news_association = Table(
+    "company_news_association",
+    Base.metadata,
+    Column("company_id", Integer, ForeignKey("companies.id"), primary_key=True),
+    Column("news_id", Integer, ForeignKey("news_items.id"), primary_key=True)
+)
+
 class Company(Base):
     """Model representing a company in the S&P 500 index"""
     __tablename__ = "companies"
@@ -31,9 +40,8 @@ class Company(Base):
     sector = Column(String(100), index=True)
     industry = Column(String(255))
     
-    # Relationships
-    news_items = relationship("NewsItem", back_populates="company", 
-                             secondary="company_news_association")
+    # Relationships - using the association table directly
+    news_items = relationship("NewsItem", secondary=company_news_association, back_populates="companies")
 
 class NewsItem(Base):
     """Model representing a news article"""
@@ -49,16 +57,8 @@ class NewsItem(Base):
     category = Column(Enum(NewsCategoryEnum), default=NewsCategoryEnum.GENERAL)
     
     # Relationships
-    companies = relationship("Company", back_populates="news_items", 
-                           secondary="company_news_association")
+    companies = relationship("Company", secondary=company_news_association, back_populates="news_items")
     sentiments = relationship("NewsSentiment", back_populates="news_item")
-
-class CompanyNewsAssociation(Base):
-    """Association table for many-to-many relationship between companies and news"""
-    __tablename__ = "company_news_association"
-    
-    company_id = Column(Integer, ForeignKey("companies.id"), primary_key=True)
-    news_id = Column(Integer, ForeignKey("news_items.id"), primary_key=True)
 
 class NewsSentiment(Base):
     """Model representing sentiment analysis for a company in a news article"""
@@ -72,3 +72,4 @@ class NewsSentiment(Base):
     
     # Relationships
     news_item = relationship("NewsItem", back_populates="sentiments")
+    company = relationship("Company")

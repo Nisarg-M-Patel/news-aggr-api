@@ -50,6 +50,10 @@ async def authenticate_requests(request: Request, call_next):
     if request.url.path in ["/api/docs", "/api/redoc", "/api/openapi.json"]:
         return await call_next(request)
     
+    # Print debug info
+    print(f"API_KEY setting: {settings.API_KEY}")
+    print(f"Header API key: {request.headers.get('X-API-Key')}")
+
     # Skip auth if API_KEY is "dev_api_key" (development mode)
     if settings.API_KEY == "dev_api_key":
         return await call_next(request)
@@ -80,21 +84,14 @@ async def collect_news_periodically():
         try:
             logger.info("Starting scheduled news collection")
             
-            # In a real implementation, this would:
-            # 1. Fetch companies from the database
-            # 2. Collect news for all companies
-            # 3. Process the news (sentiment, categorization)
-            # 4. Store in the database
-            
-            # Example of how it would work (commented out as DB integration would be needed)
-            '''
+            # Get companies from the database
             from app.database import SessionLocal
             
             db = SessionLocal()
             try:
                 # Get all companies
                 companies = db.query(models.Company).all()
-                company_data = [{"symbol": c.symbol, "name": c.name} for c in companies]
+                company_data = [{"id": c.id, "symbol": c.symbol, "name": c.name} for c in companies]
                 
                 # Collect news
                 articles = await collector.collect_for_companies(company_data)
@@ -146,10 +143,6 @@ async def collect_news_periodically():
                 logger.error(f"Error in news collection: {str(e)}")
             finally:
                 db.close()
-            '''
-            
-            # For demonstration, just log
-            logger.info("Completed scheduled news collection")
             
         except Exception as e:
             logger.error(f"Error in news collection task: {str(e)}")

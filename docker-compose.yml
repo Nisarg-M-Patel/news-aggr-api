@@ -5,11 +5,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: news-api
     ports:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/newsapi
-      - API_KEY=your_secret_key_here
+      - API_KEY=dev_api_key
       - DEBUG=true
     depends_on:
       - db

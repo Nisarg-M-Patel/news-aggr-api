@@ -1,8 +1,11 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Generic, TypeVar, Any
 from pydantic import BaseModel, HttpUrl, Field
 
 from app.models import NewsCategoryEnum, SentimentEnum
+
+# Define a TypeVar for generic pagination
+T = TypeVar('T')
 
 # Company schemas
 class CompanyBase(BaseModel):
@@ -17,8 +20,7 @@ class CompanyCreate(CompanyBase):
 class Company(CompanyBase):
     id: int
     
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 # News schemas
 class NewsSentimentBase(BaseModel):
@@ -29,8 +31,7 @@ class NewsSentiment(NewsSentimentBase):
     company_id: int
     company: Optional[Company] = None
     
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 class NewsItemBase(BaseModel):
     title: str
@@ -49,8 +50,7 @@ class NewsItem(NewsItemBase):
     companies: List[Company] = []
     sentiments: List[NewsSentiment] = []
     
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 # Search and filter schemas
 class NewsFilter(BaseModel):
@@ -61,10 +61,12 @@ class NewsFilter(BaseModel):
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
 
-# Pagination schema
+# Pagination schema that can handle different types
 class PaginatedResponse(BaseModel):
-    items: List
+    items: List[Any]  # Use Any to handle different item types
     total: int
     page: int
     size: int
     pages: int
+    
+    model_config = {"arbitrary_types_allowed": True}

@@ -74,11 +74,121 @@ async def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
 
+# Debug endpoint for manual news collection
+@app.get("/api/debug/collect")
+async def debug_collect_news():
+    """Debug endpoint to manually trigger news collection"""
+    # Create collector and processor
+    collector = NewsCollector()
+    processor = NewsProcessor()
+    
+    # Get companies from the database
+    db = SessionLocal()
+    try:
+        # Get all companies
+        companies = db.query(models.Company).all()
+        if not companies:
+            return {"status": "error", "message": "No companies found. Run the seed_companies.py script first."}
+        
+        company_data = [{"id": c.id, "symbol": c.symbol, "name": c.name} for c in companies]
+        
+        # Collect news for the first company only (for quicker debugging)
+        test_company = company_data[0]
+        logger.info(f"Debug collecting news for {test_company['symbol']}")
+        
+        articles = await collector.collect_for_company(
+            test_company["symbol"], 
+            test_company["name"],
+            days=7  # Look back 7 days
+        )
+        
+        if not articles:
+            return {"status": "warning", "message": f"No articles found for {test_company['symbol']}"}
+        
+        # Process and store a sample article
+        if articles:
+            sample_article = articles[0]
+            processed = processor.process_article(sample_article, company_data)
+            
+            # Check if article already exists
+            existing = db.query(models.NewsItem).filter(models.NewsItem.url == processed["url"]).first()
+            if existing:
+                return {
+                    "status": "info", 
+                    "message": "Sample article already exists in database",
+                    "article": {
+                        "title": sample_article["title"],
+                        "url": sample_article["url"],
+                        "source": sample_article["source"]
+                    }
+                }
+            
+            # Create news item
+            news_item = models.NewsItem(
+                title=processed["title"],
+                url=processed["url"],
+                source=processed["source"],
+                published_at=processed["published_at"],
+                content_snippet=processed.get("content_snippet", ""),
+                category=processed["category"]
+            )
+            db.add(news_item)
+            db.flush()
+            
+            # Link to mentioned companies
+            for company_id in processed["mentioned_company_ids"]:
+                db.execute(
+                    models.company_news_association.insert().values(
+                        company_id=company_id,
+                        news_id=news_item.id
+                    )
+                )
+            
+            # Add sentiment analysis
+            for sentiment_data in processed["sentiments"]:
+                sentiment = models.NewsSentiment(
+                    news_id=news_item.id,
+                    company_id=sentiment_data["company_id"],
+                    sentiment=sentiment_data["sentiment"],
+                    score=sentiment_data["score"]
+                )
+                db.add(sentiment)
+            
+            db.commit()
+            
+            return {
+                "status": "success", 
+                "message": f"Added sample article for {test_company['symbol']}",
+                "article": {
+                    "title": sample_article["title"],
+                    "url": sample_article["url"],
+                    "source": sample_article["source"],
+                    "category": processed["category"].value,
+                    "mentioned_companies": processed["mentioned_company_ids"],
+                    "sentiments": [
+                        {"company_id": s["company_id"], "sentiment": s["sentiment"].value, "score": s["score"]} 
+                        for s in processed["sentiments"]
+                    ]
+                }
+            }
+        
+        return {"status": "error", "message": "Failed to process any articles"}
+    
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error in debug collection: {str(e)}")
+        return {"status": "error", "message": str(e)}
+    finally:
+        db.close()
+
 # Background task for collecting news
 async def collect_news_periodically():
     """Background task to collect news at regular intervals"""
     collector = NewsCollector()
     processor = NewsProcessor()
+    
+    # Sleep initially to give the app time to start up
+    await asyncio.sleep(10)
     
     while True:
         try:
@@ -93,10 +203,20 @@ async def collect_news_periodically():
                 companies = db.query(models.Company).all()
                 company_data = [{"id": c.id, "symbol": c.symbol, "name": c.name} for c in companies]
                 
+                logger.info(f"Found {len(company_data)} companies in database")
+                if not company_data:
+                    logger.error("No companies found in database. Have you run seed_companies.py?")
+                    await asyncio.sleep(60)  # Wait a minute before trying again
+                    continue
+                
                 # Collect news
+                logger.info(f"Collecting news for companies: {[c['symbol'] for c in company_data]}")
                 articles = await collector.collect_for_companies(company_data)
                 
+                logger.info(f"Collected {len(articles)} total articles")
+                
                 # Process each article
+                articles_added = 0
                 for article in articles:
                     processed = processor.process_article(article, company_data)
                     
@@ -115,10 +235,11 @@ async def collect_news_periodically():
                         category=processed["category"]
                     )
                     db.add(news_item)
-                    db.flush()
+                    db.flush()  # Flush to get the id
                     
-                    # Link to mentioned companies
+                    # Link to mentioned companies using the association table
                     for company_id in processed["mentioned_company_ids"]:
+                        # Use execute to insert directly into the association table
                         db.execute(
                             models.company_news_association.insert().values(
                                 company_id=company_id,
@@ -135,9 +256,11 @@ async def collect_news_periodically():
                             score=sentiment_data["score"]
                         )
                         db.add(sentiment)
+                    
+                    articles_added += 1
                 
                 db.commit()
-                logger.info(f"Added {len(articles)} new articles")
+                logger.info(f"Added {articles_added} new articles")
             
             except Exception as e:
                 db.rollback()
@@ -149,6 +272,7 @@ async def collect_news_periodically():
             logger.error(f"Error in news collection task: {str(e)}")
         
         # Wait for next collection interval
+        logger.info(f"Waiting {settings.REFRESH_INTERVAL} minutes before next collection")
         await asyncio.sleep(settings.REFRESH_INTERVAL * 60)
 
 # Startup event

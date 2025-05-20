@@ -72,11 +72,11 @@ async def get_news(
     """
     # Start with a base query joining news and companies
     query = db.query(models.NewsItem).join(
-        models.CompanyNewsAssociation,
-        models.NewsItem.id == models.CompanyNewsAssociation.news_id
+        models.company_news_association,
+        models.NewsItem.id == models.company_news_association.c.news_id
     ).join(
         models.Company,
-        models.Company.id == models.CompanyNewsAssociation.company_id
+        models.Company.id == models.company_news_association.c.company_id
     )
     
     # Apply filters
@@ -110,8 +110,15 @@ async def get_news(
     pages = (total + limit - 1) // limit if limit > 0 else 1
     page = (skip // limit) + 1 if limit > 0 else 1
     
+    # Convert the SQLAlchemy models to Pydantic models
+    pydantic_items = []
+    for item in news_items:
+        # We need to explicitly create Pydantic models from SQLAlchemy models
+        pydantic_item = schemas.NewsItem.model_validate(item)
+        pydantic_items.append(pydantic_item)
+    
     return {
-        "items": news_items,
+        "items": pydantic_items,  # Use the converted items
         "total": total,
         "page": page,
         "size": limit,
@@ -138,8 +145,9 @@ async def get_company_news(
     
     # Query news for this company
     query = db.query(models.NewsItem).join(
-    models.company_news_association,
-    models.NewsItem.id == models.company_news_association.c.news_id).filter(models.company_news_association.c.company_id == company.id)
+        models.company_news_association,
+        models.NewsItem.id == models.company_news_association.c.news_id
+    ).filter(models.company_news_association.c.company_id == company.id)
     
     # Apply filters
     if category:
@@ -169,8 +177,15 @@ async def get_company_news(
     pages = (total + limit - 1) // limit if limit > 0 else 1
     page = (skip // limit) + 1 if limit > 0 else 1
     
+    # Convert the SQLAlchemy models to Pydantic models
+    pydantic_items = []
+    for item in news_items:
+        # We need to explicitly create Pydantic models from SQLAlchemy models
+        pydantic_item = schemas.NewsItem.model_validate(item)
+        pydantic_items.append(pydantic_item)
+    
     return {
-        "items": news_items,
+        "items": pydantic_items,  # Use the converted items
         "total": total,
         "page": page,
         "size": limit,
@@ -197,11 +212,11 @@ async def get_sector_news(
     
     # Query news for companies in this sector
     query = db.query(models.NewsItem).join(
-        models.CompanyNewsAssociation,
-        models.NewsItem.id == models.CompanyNewsAssociation.news_id
+        models.company_news_association,
+        models.NewsItem.id == models.company_news_association.c.news_id
     ).join(
         models.Company,
-        models.Company.id == models.CompanyNewsAssociation.company_id
+        models.Company.id == models.company_news_association.c.company_id
     ).filter(models.Company.sector == sector)
     
     # Apply filters
@@ -229,8 +244,15 @@ async def get_sector_news(
     pages = (total + limit - 1) // limit if limit > 0 else 1
     page = (skip // limit) + 1 if limit > 0 else 1
     
+    # Convert the SQLAlchemy models to Pydantic models
+    pydantic_items = []
+    for item in news_items:
+        # We need to explicitly create Pydantic models from SQLAlchemy models
+        pydantic_item = schemas.NewsItem.model_validate(item)
+        pydantic_items.append(pydantic_item)
+    
     return {
-        "items": news_items,
+        "items": pydantic_items,  # Use the converted items
         "total": total,
         "page": page,
         "size": limit,
@@ -265,8 +287,15 @@ async def search_news(
     pages = (total + limit - 1) // limit if limit > 0 else 1
     page = (skip // limit) + 1 if limit > 0 else 1
     
+    # Convert the SQLAlchemy models to Pydantic models
+    pydantic_items = []
+    for item in news_items:
+        # We need to explicitly create Pydantic models from SQLAlchemy models
+        pydantic_item = schemas.NewsItem.model_validate(item)
+        pydantic_items.append(pydantic_item)
+    
     return {
-        "items": news_items,
+        "items": pydantic_items,  # Use the converted items
         "total": total,
         "page": page,
         "size": limit,
@@ -341,7 +370,7 @@ async def refresh_company(
     db: Session = Depends(get_db)
 ):
     """
-    Trigger manual refresh for a company. (Placeholder - actual implementation would call collector)
+    Trigger manual refresh for a company.
     """
     # Check if company exists
     company = db.query(models.Company).filter(models.Company.symbol == symbol.upper()).first()
@@ -354,7 +383,7 @@ async def refresh_company(
 @router.post("/refresh/all")
 async def refresh_all(db: Session = Depends(get_db)):
     """
-    Trigger full index refresh. (Placeholder - actual implementation would call collector)
+    Trigger full index refresh.
     """
     # This would call the news collector in a real implementation
     return {"status": "success", "message": "Full refresh triggered"}

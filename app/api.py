@@ -138,9 +138,8 @@ async def get_company_news(
     
     # Query news for this company
     query = db.query(models.NewsItem).join(
-        models.CompanyNewsAssociation,
-        models.NewsItem.id == models.CompanyNewsAssociation.news_id
-    ).filter(models.CompanyNewsAssociation.company_id == company.id)
+    models.company_news_association,
+    models.NewsItem.id == models.company_news_association.c.news_id).filter(models.company_news_association.c.company_id == company.id)
     
     # Apply filters
     if category:

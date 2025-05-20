@@ -7,7 +7,7 @@ import asyncio
 from typing import List
 
 from app.config import settings
-from app.database import init_db
+from app.database import init_db, SessionLocal
 from app.api import router
 from app.collector import NewsCollector
 from app.processor import NewsProcessor
@@ -119,11 +119,12 @@ async def collect_news_periodically():
                     
                     # Link to mentioned companies
                     for company_id in processed["mentioned_company_ids"]:
-                        association = models.CompanyNewsAssociation(
-                            company_id=company_id,
-                            news_id=news_item.id
+                        db.execute(
+                            models.company_news_association.insert().values(
+                                company_id=company_id,
+                                news_id=news_item.id
+                            )
                         )
-                        db.add(association)
                     
                     # Add sentiment analysis
                     for sentiment_data in processed["sentiments"]:
@@ -157,6 +158,20 @@ async def startup_event():
     # Initialize database
     init_db()
     logger.info("Database initialized")
+    
+    # Check if companies exist, if not seed them
+    db = SessionLocal()
+    try:
+        company_count = db.query(models.Company).count()
+        if company_count == 0:
+            logger.warning("No companies found in database. Running seed script...")
+            from scripts.seed_companies import seed_companies
+            seed_companies()
+            logger.info("Companies seeded successfully")
+    except Exception as e:
+        logger.error(f"Error checking or seeding companies: {str(e)}")
+    finally:
+        db.close()
     
     # Start background task for news collection
     asyncio.create_task(collect_news_periodically())

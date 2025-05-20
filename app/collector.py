@@ -1,10 +1,8 @@
-import asyncio
 import logging
-from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
-import aiohttp
-from bs4 import BeautifulSoup
-import re
+import asyncio
+from datetime import datetime
+from typing import List, Dict, Any
+import feedparser
 from urllib.parse import quote
 
 from app.config import settings
@@ -12,7 +10,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 class NewsCollector:
-    """Collects news articles from Google News for S&P 500 companies"""
+    """Collects news articles from Google News RSS feeds for S&P 500 companies"""
     
     def __init__(self):
         self.delay = settings.GOOGLE_NEWS_DELAY
@@ -22,7 +20,7 @@ class NewsCollector:
 
     async def collect_for_company(self, company_symbol: str, company_name: str, days: int = 1) -> List[Dict[str, Any]]:
         """
-        Collect news for a specific company.
+        Collect news for a specific company using Google News RSS feeds.
         
         Args:
             company_symbol: Stock ticker symbol
@@ -32,72 +30,57 @@ class NewsCollector:
         Returns:
             List of news article dictionaries
         """
-        # Use both symbol and name for better search results
-        query = f"{company_symbol} {company_name} stock"
-        time_range = f"when:{days}d"
+        # Create a search query with both symbol and name
+        query = f"{company_symbol} {company_name}"
         
-        url = f"https://news.google.com/search?q={quote(query)}&hl=en-US&gl=US&ceid=US:en&{time_range}"
+        # Add time constraint if days specified
+        if days > 0:
+            query = f"{query} when:{days}d"
         
-        async with aiohttp.ClientSession(headers=self.headers) as session:
-            async with session.get(url) as response:
-                if response.status != 200:
-                    logger.error(f"Failed to fetch news for {company_symbol}: {response.status}")
-                    return []
-                
-                html = await response.text()
-                
-                # Parse the HTML
-                return self._parse_google_news(html, company_symbol)
-    
-    def _parse_google_news(self, html: str, company_symbol: str) -> List[Dict[str, Any]]:
-        """Parse Google News HTML to extract article information"""
-        soup = BeautifulSoup(html, 'html.parser')
-        articles = []
+        # Use the RSS feed URL for Google News search
+        url = f"https://news.google.com/rss/search?q={quote(query)}&hl=en-US&gl=US&ceid=US:en"
         
-        # Find all article elements
-        for article_tag in soup.select('article'):
-            try:
-                # Extract title and URL
-                title_tag = article_tag.select_one('h3 a')
-                if not title_tag:
-                    continue
-                
-                title = title_tag.text
-                # Google News uses relative URLs
-                url_path = title_tag.get('href', '')
-                if not url_path:
-                    continue
-                url = f"https://news.google.com{url_path.replace('./', '/')}"
-                
-                # Extract source and time
-                info_tag = article_tag.select_one('time')
+        logger.info(f"Fetching news for {company_symbol} from RSS feed: {url}")
+        
+        try:
+            # Parse the RSS feed using feedparser
+            feed = feedparser.parse(url)
+            
+            # Process the feed entries
+            articles = []
+            for entry in feed.entries:
+                # Extract published date
                 published_at = datetime.now()
-                if info_tag and info_tag.get('datetime'):
-                    try:
-                        published_at = datetime.fromisoformat(info_tag.get('datetime', ''))
-                    except ValueError:
-                        pass
+                if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                    published_at = datetime.fromtimestamp(
+                        datetime(*entry.published_parsed[:6]).timestamp()
+                    )
                 
-                source_tag = article_tag.select_one('div[data-n-tid]')
-                source = source_tag.text if source_tag else "Unknown"
+                # Extract source from title (Google News format: 'Title - Source')
+                title_parts = entry.title.split(' - ')
+                source = title_parts[-1] if len(title_parts) > 1 else "Unknown"
+                title = ' - '.join(title_parts[:-1]) if len(title_parts) > 1 else entry.title
                 
-                # Extract snippet if available
-                snippet_tag = article_tag.select_one('p[data-n-hl]')
-                content_snippet = snippet_tag.text if snippet_tag else ""
+                # Extract content snippet
+                content_snippet = ""
+                if hasattr(entry, 'summary'):
+                    content_snippet = entry.summary
                 
                 articles.append({
                     "title": title,
-                    "url": url,
+                    "url": entry.link,
                     "source": source,
                     "published_at": published_at,
                     "content_snippet": content_snippet,
                     "company_symbol": company_symbol,
                 })
-            except Exception as e:
-                logger.error(f"Error parsing article for {company_symbol}: {str(e)}")
-                continue
-        
-        return articles
+            
+            logger.info(f"Collected {len(articles)} articles for {company_symbol}")
+            return articles
+            
+        except Exception as e:
+            logger.error(f"Error collecting news for {company_symbol}: {str(e)}")
+            return []
     
     async def collect_for_companies(self, companies: List[Dict[str, str]]) -> List[Dict[str, Any]]:
         """

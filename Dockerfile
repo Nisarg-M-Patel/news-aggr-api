@@ -5,15 +5,16 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies
+# Install Python dependencies (including Google Cloud)
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Download ML models (one-time setup) - this will cache the models in the image
+# Download ML models (one-time setup)
 RUN python -c "\
 import os; \
 os.environ['TRANSFORMERS_CACHE'] = '/app/.cache'; \
@@ -28,7 +29,8 @@ print('✅ Models downloaded and cached successfully'); \
 # Copy application code
 COPY . .
 
-# Set environment variable for transformers cache
+# Set environment variables
 ENV TRANSFORMERS_CACHE=/app/.cache
+ENV PYTHONPATH=/app
 
 # Command is specified in docker-compose.yml

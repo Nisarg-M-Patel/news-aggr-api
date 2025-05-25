@@ -5,18 +5,23 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: news-api:latest  # Fixed tag to reuse image
+    image: news-api:latest
     ports:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgresql://postgres:newsapi_secure_password@db:5432/newsapi
       - API_KEY=dev_api_key
       - DEBUG=true
+      # Google Cloud configuration
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+      - GOOGLE_CLOUD_PROJECT=news-aggr-api  # Optional, can use default
     depends_on:
       db:
         condition: service_healthy
     volumes:
       - ./:/app
+      # Mount your GCP service account key (if using service account)
+      - ./gcp-key.json:/app/gcp-key.json:ro  # Optional
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     restart: unless-stopped
 
@@ -29,7 +34,6 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      # Named volume for persistent data
       - newsapi_postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
@@ -40,6 +44,5 @@ services:
       start_period: 30s
 
 volumes:
-  # Named volume that persists data across container restarts
   newsapi_postgres_data:
     driver: local

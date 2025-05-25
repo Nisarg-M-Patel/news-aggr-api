@@ -9,3 +9,5 @@ __pycache__/
 backups/
 
 .cache/
+
+gcp-key.json

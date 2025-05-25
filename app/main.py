@@ -12,6 +12,7 @@ from app.api import router
 from app.collector import NewsCollector
 from app.processor import NewsProcessor
 from app import models, schemas
+from app.gdelt_simple import SimpleGDELTCollector, progress
 
 # Configure logging
 logging.basicConfig(
@@ -181,6 +182,48 @@ async def debug_collect_news():
     finally:
         db.close()
 
+@app.get("/api/backfill/progress")
+async def get_backfill_progress():
+    """Monitor GDELT backfill progress"""
+    return progress.to_dict()
+
+async def run_gdelt_backfill_if_needed():
+    """Run GDELT backfill if no historical data exists"""
+    
+    collector = SimpleGDELTCollector()
+    
+    if not collector.is_available():
+        logger.info("⚠️ GDELT not configured, skipping historical backfill")
+        return
+    
+    db = SessionLocal()
+    try:
+        # Get companies
+        companies = db.query(models.Company).all()
+        company_data = [{"id": c.id, "symbol": c.symbol, "name": c.name} for c in companies]
+        
+        # Check if we have historical data (older than 30 days)
+        cutoff_date = datetime.now() - timedelta(days=30)
+        historical_count = db.query(models.NewsItem).filter(
+            models.NewsItem.published_at < cutoff_date
+        ).count()
+        
+        if historical_count == 0:
+            logger.info("🚀 No historical data found, starting GDELT backfill...")
+            
+            # Backfill last 2 years
+            end_date = datetime.now().strftime('%Y-%m-%d')
+            start_date = (datetime.now() - timedelta(days=730)).strftime('%Y-%m-%d')
+            
+            total_added = await collector.run_backfill(company_data, start_date, end_date)
+            logger.info(f"✅ GDELT backfill complete: {total_added} articles added")
+        else:
+            logger.info(f"📊 Found {historical_count} historical articles, skipping backfill")
+            
+    finally:
+        db.close()
+
+
 # Background task for collecting news
 async def collect_news_periodically():
     """Background task to collect news at regular intervals"""
@@ -297,6 +340,7 @@ async def startup_event():
     finally:
         db.close()
     
+    await run_gdelt_backfill_if_needed()
     # Start background task for news collection
     asyncio.create_task(collect_news_periodically())
     logger.info("Background news collection task started")

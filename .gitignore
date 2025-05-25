@@ -5,3 +5,7 @@ __pycache__/
 *.pyw
 *.pyz
 *.txt
+
+backups/
+
+.cache/

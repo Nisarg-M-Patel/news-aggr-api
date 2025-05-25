@@ -29,16 +29,6 @@ async def get_companies(
     companies = query.offset(skip).limit(limit).all()
     return companies
 
-@router.get("/companies/{symbol}", response_model=schemas.Company)
-async def get_company(symbol: str = Path(..., title="Company stock symbol"), db: Session = Depends(get_db)):
-    """
-    Get details about a specific company by symbol.
-    """
-    company = db.query(models.Company).filter(models.Company.symbol == symbol.upper()).first()
-    if not company:
-        raise HTTPException(status_code=404, detail=f"Company with symbol {symbol} not found")
-    return company
-
 @router.get("/companies/sectors", response_model=List[dict])
 async def get_sectors(db: Session = Depends(get_db)):
     """
@@ -53,6 +43,18 @@ async def get_sectors(db: Session = Depends(get_db)):
     ).group_by(models.Company.sector).all()
     
     return [{"sector": sector, "company_count": count} for sector, count in sectors]
+
+
+@router.get("/companies/{symbol}", response_model=schemas.Company)
+async def get_company(symbol: str = Path(..., title="Company stock symbol"), db: Session = Depends(get_db)):
+    """
+    Get details about a specific company by symbol.
+    """
+    company = db.query(models.Company).filter(models.Company.symbol == symbol.upper()).first()
+    if not company:
+        raise HTTPException(status_code=404, detail=f"Company with symbol {symbol} not found")
+    return company
+
 
 # --- News Endpoints ---
 
@@ -364,6 +366,14 @@ async def get_sentiment_trends(
 
 # --- Management ---
 
+@router.post("/refresh/all")
+async def refresh_all(db: Session = Depends(get_db)):
+    """
+    Trigger full index refresh.
+    """
+    # This would call the news collector in a real implementation
+    return {"status": "success", "message": "Full refresh triggered"}
+
 @router.post("/refresh/{symbol}")
 async def refresh_company(
     symbol: str = Path(..., title="Company stock symbol"),
@@ -380,10 +390,3 @@ async def refresh_company(
     # This would call the news collector in a real implementation
     return {"status": "success", "message": f"Refresh triggered for {symbol}"}
 
-@router.post("/refresh/all")
-async def refresh_all(db: Session = Depends(get_db)):
-    """
-    Trigger full index refresh.
-    """
-    # This would call the news collector in a real implementation
-    return {"status": "success", "message": "Full refresh triggered"}

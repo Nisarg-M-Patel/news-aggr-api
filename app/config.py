@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     
     # Database settings
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@db:5432/newsapi")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:newsapi_secure_password@db:5432/newsapi")
     
     # Google News settings
     GOOGLE_NEWS_DELAY: float = 1.0  # Delay between requests in seconds

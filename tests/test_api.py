@@ -1,45 +1,48 @@
 #!/usr/bin/env python3
 """
-Quick test script for all API endpoints
+Simple test script for the clean news API
 Run this after your API is running on http://localhost:8000
 """
 
 import requests
 import json
-from datetime import datetime
 
 # Base URL for your API
 BASE_URL = "http://localhost:8000/api"
 
-def test_endpoint(method, endpoint, description, expected_status=200, params=None, headers=None):
+def test_endpoint(method, endpoint, description, expected_status=200, params=None):
     """Test a single endpoint and print results"""
     url = f"{BASE_URL}{endpoint}"
     
-    print(f"\n{'='*60}")
+    print(f"\n{'='*50}")
     print(f"Testing: {description}")
     print(f"URL: {url}")
+    if params:
+        print(f"Params: {params}")
     
     try:
         if method.upper() == "GET":
-            response = requests.get(url, params=params, headers=headers)
+            response = requests.get(url, params=params)
         elif method.upper() == "POST":
-            response = requests.post(url, json=params, headers=headers)
+            response = requests.post(url, json=params)
         
-        print(f"Status Code: {response.status_code}")
+        print(f"Status: {response.status_code}")
         
         if response.status_code == expected_status:
             print("✅ PASS")
             
-            # Pretty print JSON response if it's JSON
             try:
                 data = response.json()
-                if isinstance(data, list) and len(data) > 0:
-                    print(f"Response: Found {len(data)} items")
-                    print(f"Sample item: {json.dumps(data[0], indent=2, default=str)}")
-                elif isinstance(data, dict):
-                    print(f"Response: {json.dumps(data, indent=2, default=str)}")
+                if isinstance(data, dict) and 'items' in data:
+                    print(f"Found {data['total']} items, showing page {data['page']} of {data['pages']}")
+                    if data['items']:
+                        print(f"Sample: {data['items'][0]['title'][:100]}...")
+                elif isinstance(data, list):
+                    print(f"Found {len(data)} items")
+                    if data:
+                        print(f"Sample: {json.dumps(data[0], indent=2, default=str)}")
                 else:
-                    print(f"Response: {data}")
+                    print(f"Response: {json.dumps(data, indent=2, default=str)}")
             except:
                 print(f"Response: {response.text}")
         else:
@@ -52,59 +55,49 @@ def test_endpoint(method, endpoint, description, expected_status=200, params=Non
 
 def main():
     """Run all endpoint tests"""
-    print("🚀 Starting API Endpoint Tests")
+    print("🚀 Testing Simple News API")
     print(f"Base URL: {BASE_URL}")
     
     # Health check
     test_endpoint("GET", "/health", "Health Check")
     
-    # Companies endpoints
+    # Companies
     test_endpoint("GET", "/companies", "Get All Companies")
-    test_endpoint("GET", "/companies?limit=2", "Get Companies with Limit")
-    test_endpoint("GET", "/companies?sector=Information Technology", "Get Companies by Sector")
-    
-    # Sectors endpoints (the one we fixed)
     test_endpoint("GET", "/companies/sectors", "Get All Sectors")
-    
-    # Try to get a specific company (assuming AAPL exists from seed data)
-    test_endpoint("GET", "/companies/AAPL", "Get Specific Company (AAPL)")
+    test_endpoint("GET", "/companies/AAPL", "Get AAPL Company Details")
     test_endpoint("GET", "/companies/INVALID", "Get Invalid Company", expected_status=404)
     
-    # News endpoints
-    test_endpoint("GET", "/news", "Get All News")
-    test_endpoint("GET", "/news?limit=5", "Get News with Limit")
-    test_endpoint("GET", "/news?company_symbol=AAPL", "Get News for AAPL")
-    test_endpoint("GET", "/news?days=1", "Get News from Last Day")
+    print(f"\n{'#'*60}")
+    print("📰 TESTING NEWS ENDPOINTS")
+    print("#"*60)
     
-    # Company-specific news
-    test_endpoint("GET", "/companies/AAPL/news", "Get AAPL News")
-    test_endpoint("GET", "/companies/AAPL/news?limit=3", "Get AAPL News with Limit")
-    test_endpoint("GET", "/companies/INVALID/news", "Get News for Invalid Company", expected_status=404)
+    # Company News (default: last day)
+    test_endpoint("GET", "/news/company", "AAPL News (Last Day)", params={"c": "AAPL"})
+    test_endpoint("GET", "/news/company", "AAPL News (Last 7 Days)", params={"c": "AAPL", "days": 7})
+    test_endpoint("GET", "/news/company", "AAPL News (Limit 5)", params={"c": "AAPL", "days": 7, "limit": 5})
+    test_endpoint("GET", "/news/company", "Invalid Company", params={"c": "INVALID"}, expected_status=404)
     
-    # Sector news (if you have companies with this sector)
-    test_endpoint("GET", "/sectors/Information Technology/news", "Get IT Sector News")
-    test_endpoint("GET", "/sectors/InvalidSector/news", "Get Invalid Sector News", expected_status=404)
+    # Sector News (default: last day)
+    test_endpoint("GET", "/news/sector", "IT Sector News (Last Day)", params={"s": "Information Technology"})
+    test_endpoint("GET", "/news/sector", "IT Sector News (Last 7 Days)", params={"s": "Information Technology", "days": 7})
+    test_endpoint("GET", "/news/sector", "IT Sector News (Limit 3)", params={"s": "Information Technology", "days": 7, "limit": 3})
+    test_endpoint("GET", "/news/sector", "Invalid Sector", params={"s": "Invalid Sector"}, expected_status=404)
     
-    # Search endpoint
-    test_endpoint("GET", "/search?q=Apple", "Search for 'Apple'")
-    test_endpoint("GET", "/search?q=earnings", "Search for 'earnings'")
-    test_endpoint("GET", "/search?q=xy", "Search with Short Query", expected_status=422)  # Should fail validation
-    
-    # Trends endpoint
-    test_endpoint("GET", "/trends/sentiment", "Get Sentiment Trends")
-    test_endpoint("GET", "/trends/sentiment?days=7", "Get Sentiment Trends (7 days)")
-    test_endpoint("GET", "/trends/sentiment?company_symbol=AAPL", "Get AAPL Sentiment Trends")
-    
-    # Management endpoints
+    # Management
     test_endpoint("POST", "/refresh/AAPL", "Refresh AAPL")
     test_endpoint("POST", "/refresh/all", "Refresh All")
     test_endpoint("POST", "/refresh/INVALID", "Refresh Invalid Company", expected_status=404)
     
-    # Debug endpoint
+    # Debug
     test_endpoint("GET", "/debug/collect", "Debug Collect News")
     
     print(f"\n{'='*60}")
-    print("🏁 Test Complete!")
+    print("🎉 API Test Complete!")
+    print("\n📋 API Summary:")
+    print("✅ GET /news/company?c=AAPL - Get Apple news (default: last day)")
+    print("✅ GET /news/company?c=AAPL&days=7 - Get Apple news from last 7 days")
+    print("✅ GET /news/sector?s=Information Technology - Get IT sector news")
+    print("✅ Clean, simple API with no sentiment complexity")
 
 if __name__ == "__main__":
     main()

@@ -5,29 +5,41 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: news-api
+    image: news-api:latest  # Fixed tag to reuse image
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/newsapi
+      - DATABASE_URL=postgresql://postgres:newsapi_secure_password@db:5432/newsapi
       - API_KEY=dev_api_key
       - DEBUG=true
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     volumes:
       - ./:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
 
   db:
-    image: postgres:14
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+    image: postgres:15-alpine
     environment:
-      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_PASSWORD=newsapi_secure_password
       - POSTGRES_USER=postgres
       - POSTGRES_DB=newsapi
     ports:
-      - "5433:5432"  # Changed from 5432:5432 to use port 5433 externally
+      - "5433:5432"
+    volumes:
+      # Named volume for persistent data
+      - newsapi_postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d newsapi"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
 volumes:
-  postgres_data:
+  # Named volume that persists data across container restarts
+  newsapi_postgres_data:
+    driver: local

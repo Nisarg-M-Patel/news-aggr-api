@@ -2,24 +2,36 @@ import os
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
-    """Application settings configuration."""
+    """Application settings configuration"""
+    
     # API settings
     APP_NAME: str = "S&P 500 News API"
     API_PREFIX: str = "/api"
     DEBUG: bool = False
     
     # Database settings
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:newsapi_secure_password@db:5432/newsapi")
+    DATABASE_URL: str = os.getenv(
+        "DATABASE_URL", 
+        "postgresql://postgres:newsapi_secure_password@db:5432/newsapi"
+    )
     
-    # Google News settings
-    GOOGLE_NEWS_DELAY: float = 1.0  # Delay between requests in seconds
+    # Background processing
+    ENABLE_BACKGROUND_COLLECTION: bool = True
+    REFRESH_INTERVAL: int = 120  # Minutes between collections
     
     # News collection settings
-    REFRESH_INTERVAL: int = 120  # Minutes between full refresh
-    PRIORITY_REFRESH_INTERVAL: int = 30  # Minutes between priority company refresh
+    GOOGLE_NEWS_DELAY: float = 1.0  # Delay between requests
     
-    # Security settings (basic auth for simplicity)
+    # Security
     API_KEY: str = os.getenv("API_KEY", "dev_api_key")
+    
+    # GDELT settings (optional)
+    ENABLE_GDELT: bool = False
+    GOOGLE_CLOUD_PROJECT: str = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+    
+    # ML settings
+    ENABLE_ML_CLASSIFICATION: bool = True
+    ML_RELEVANCE_THRESHOLD: float = 0.6
     
     class Config:
         env_file = ".env"

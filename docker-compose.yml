@@ -12,18 +12,21 @@ services:
       - DATABASE_URL=postgresql://postgres:newsapi_secure_password@db:5432/newsapi
       - API_KEY=dev_api_key
       - DEBUG=true
-      # Google Cloud configuration
-      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
-      - GOOGLE_CLOUD_PROJECT=news-aggr-api  # Optional, can use default
+      - ENABLE_BACKGROUND_COLLECTION=true
+      - ENABLE_ML_CLASSIFICATION=true  # Disable ML initially for stability
+      - ENABLE_GDELT=false  # Disable GDELT initially
     depends_on:
       db:
         condition: service_healthy
     volumes:
       - ./:/app
-      # Mount your GCP service account key (if using service account)
-      - ./gcp-key.json:/app/gcp-key.json:ro  # Optional
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   db:
     image: postgres:15-alpine

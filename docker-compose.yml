@@ -13,13 +13,17 @@ services:
       - API_KEY=dev_api_key
       - DEBUG=true
       - ENABLE_BACKGROUND_COLLECTION=true
-      - ENABLE_ML_CLASSIFICATION=true  # Disable ML initially for stability
-      - ENABLE_GDELT=false  # Disable GDELT initially
+      - ENABLE_ML_CLASSIFICATION=true
+      - ENABLE_GDELT=true
+      # Google Cloud configuration
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+      - GOOGLE_CLOUD_PROJECT=news-aggr-api
     depends_on:
       db:
         condition: service_healthy
     volumes:
       - ./:/app
+      - ./gcp-key.json:/app/gcp-key.json:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/api/health || exit 1"]

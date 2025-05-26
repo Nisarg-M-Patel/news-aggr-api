@@ -25,13 +25,13 @@ class Settings(BaseSettings):
     # Security
     API_KEY: str = os.getenv("API_KEY", "dev_api_key")
     
-    # GDELT settings (optional)
+    # GDELT settings
     ENABLE_GDELT: bool = False
-    GOOGLE_CLOUD_PROJECT: str = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+    GOOGLE_CLOUD_PROJECT: str = os.getenv("GOOGLE_CLOUD_PROJECT", "news-aggr-api")
     
     # ML settings
     ENABLE_ML_CLASSIFICATION: bool = True
-    ML_RELEVANCE_THRESHOLD: float = 0.6
+    ML_RELEVANCE_THRESHOLD: float = 0.5
     
     class Config:
         env_file = ".env"

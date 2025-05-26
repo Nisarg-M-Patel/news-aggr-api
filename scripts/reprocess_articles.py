@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 SAFE article reprocessing script - preserves all news articles
-Cleans content snippets and updates company-news associations using hybrid ML
+Cleans content snippets and updates company-news associations using current processor
 Creates backup before making changes
-FIXED: Better transaction handling to prevent batch failures
+FIXED: Compatible with refactored processor
 """
 
 import sys
@@ -250,8 +250,8 @@ def analyze_current_state():
 
 def reprocess_database(batch_size: int = 50):
     """
-    Reprocess all articles with content cleaning and hybrid ML classification
-    FIXED: Better transaction handling with individual commits
+    Reprocess all articles with content cleaning and current processor
+    FIXED: Compatible with refactored processor
     """
     
     db = SessionLocal()
@@ -323,17 +323,21 @@ def reprocess_database(batch_size: int = 50):
                         else:
                             cleaned_content = ""
                         
-                        # Step 2: Hybrid ML company classification
-                        relevant_companies = processor.identify_relevant_companies(
-                            article.title,
-                            cleaned_content
-                        )
+                        # Step 2: Company classification using current processor
+                        article_data = {
+                            'title': article.title,
+                            'content_snippet': cleaned_content,
+                            'url': article.url,
+                            'source': article.source,
+                            'published_at': article.published_at
+                        }
                         
-                        if relevant_companies:
+                        processed = processor.process_article(article_data, company_data)
+                        relevant_company_ids = processed.get('mentioned_company_ids', [])
+                        
+                        if relevant_company_ids:
                             # Add new associations
-                            for company_info in relevant_companies:
-                                company_id = company_info['company_id']
-                                
+                            for company_id in relevant_company_ids:
                                 # Insert into association table
                                 individual_db.execute(
                                     company_news_association.insert().values(
@@ -342,17 +346,15 @@ def reprocess_database(batch_size: int = 50):
                                     )
                                 )
                                 
-                                # Count for statistics
-                                symbol = company_info['company_symbol']
-                                company_article_counts[symbol] = company_article_counts.get(symbol, 0) + 1
+                                # Count for statistics - find company symbol
+                                company_symbol = next((c['symbol'] for c in company_data if c['id'] == company_id), 'UNKNOWN')
+                                company_article_counts[company_symbol] = company_article_counts.get(company_symbol, 0) + 1
                             
                             articles_with_companies += 1
                             
-                            # Log high-confidence classifications
-                            high_conf = [rc for rc in relevant_companies if rc['relevance_score'] >= 0.8]
-                            if high_conf:
-                                scores = [f"{rc['company_symbol']}:{rc['relevance_score']:.2f}" for rc in high_conf]
-                                logger.info(f"📰 '{article.title[:50]}...' → {', '.join(scores)}")
+                            # Log classifications
+                            company_symbols = [next((c['symbol'] for c in company_data if c['id'] == cid), 'UNKNOWN') for cid in relevant_company_ids]
+                            logger.info(f"📰 '{article.title[:50]}...' → {', '.join(company_symbols)}")
                         
                         # Commit this individual article
                         individual_db.commit()
@@ -412,7 +414,7 @@ def main():
     """Main function with comprehensive reprocessing options"""
     import argparse
     
-    parser = argparse.ArgumentParser(description="Reprocess articles with content cleaning and hybrid ML")
+    parser = argparse.ArgumentParser(description="Reprocess articles with content cleaning and current processor")
     parser.add_argument("--analyze", action="store_true", help="Analyze current database state")
     parser.add_argument("--reprocess", action="store_true", help="Full reprocessing: clean content + reclassify")
     parser.add_argument("--restore", type=str, help="Restore from backup file")
@@ -433,12 +435,12 @@ def main():
         return
     
     if args.reprocess:
-        logger.info("🔄 Starting FULL database reprocessing (FIXED VERSION)...")
+        logger.info("🔄 Starting FULL database reprocessing...")
         logger.info("📋 This process will:")
         logger.info("   ✅ Preserve ALL news articles")
         logger.info("   ✅ Create backup of current associations")
         logger.info("   🧹 Clean HTML artifacts from content snippets")
-        logger.info("   🤖 Reclassify articles using hybrid ML")
+        logger.info("   🤖 Reclassify articles using current processor")
         logger.info("   🛡️ Process each article individually (safer)")
         logger.info("   ❌ NOT delete any articles")
         
@@ -486,8 +488,7 @@ def main():
                 logger.info(f"   {symbol}: {old_count} → {new_count} {change_str}")
             
             logger.info(f"\n💾 Backup saved as: {backup_file}")
-            logger.info("✅ FIXED reprocessing completed successfully!")
-            logger.info("🧹 Content is now clean and ready for production!")
+            logger.info("✅ Reprocessing completed successfully!")
             
         except Exception as e:
             logger.error(f"❌ Reprocessing failed: {e}")
@@ -497,7 +498,7 @@ def main():
     
     else:
         # Show current stats and options
-        logger.info("📊 News API Database Reprocessing Tool (FIXED VERSION)")
+        logger.info("📊 News API Database Reprocessing Tool")
         logger.info("=" * 50)
         analyze_current_state()
         
@@ -505,13 +506,6 @@ def main():
         logger.info("  python scripts/reprocess_articles.py --analyze       # Analyze current state")
         logger.info("  python scripts/reprocess_articles.py --reprocess     # Full reprocessing (clean + reclassify)")
         logger.info("  python scripts/reprocess_articles.py --restore FILE  # Restore from backup")
-        logger.info("  ls backups/                                         # List available backups")
-        
-        logger.info("\n💡 This FIXED version:")
-        logger.info("   🛡️ Processes each article individually")
-        logger.info("   🔄 Uses smaller batch sizes (default: 50)")
-        logger.info("   ✅ Continues processing even if some articles fail")
-        logger.info("   📊 Reports detailed error statistics")
 
 if __name__ == "__main__":
     main()

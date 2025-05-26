@@ -39,6 +39,10 @@ async def lifespan(app: FastAPI):
         # Seed companies if needed
         await ensure_companies_exist()
         
+        # Run GDELT backfill if enabled and needed
+        if settings.ENABLE_GDELT:
+            await run_gdelt_backfill_if_needed()
+        
         # Start background collection (optional)
         if settings.ENABLE_BACKGROUND_COLLECTION:
             background_task = asyncio.create_task(news_collection_loop())
@@ -118,7 +122,12 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "features": {
+            "ml_classification": settings.ENABLE_ML_CLASSIFICATION,
+            "gdelt_enabled": settings.ENABLE_GDELT,
+            "background_collection": settings.ENABLE_BACKGROUND_COLLECTION
+        }
     }
 
 @app.get("/api/debug/collect")
@@ -208,7 +217,8 @@ async def debug_collect_news():
                 "article": {
                     "title": processed["title"],
                     "category": processed["category"].value,
-                    "companies": processed.get("mentioned_company_ids", [])
+                    "companies": processed.get("mentioned_company_ids", []),
+                    "ml_scores": processed.get("company_ml_scores", {})
                 }
             }
             
@@ -218,6 +228,113 @@ async def debug_collect_news():
     except Exception as e:
         logger.error(f"Debug collection failed: {e}")
         return {"status": "error", "message": str(e)}
+
+# GDELT endpoints
+@app.get("/api/gdelt/test")
+async def test_gdelt():
+    """Test GDELT connection and show sample data"""
+    try:
+        from app.gdelt_simple import SimpleGDELTCollector
+        collector = SimpleGDELTCollector()
+        return collector.test_connection()
+    except Exception as e:
+        logger.error(f"GDELT test failed: {e}")
+        return {"error": f"GDELT test failed: {str(e)}"}
+
+@app.get("/api/gdelt/progress")
+async def get_gdelt_progress():
+    """Get GDELT backfill progress"""
+    try:
+        from app.gdelt_simple import progress
+        return progress.to_dict()
+    except Exception as e:
+        return {"error": f"Failed to get progress: {str(e)}"}
+
+@app.post("/api/gdelt/backfill")
+async def start_gdelt_backfill(
+    start_date: str = "2024-02-01",
+    end_date: str = "2024-05-01"
+):
+    """Start GDELT backfill for specified date range"""
+    if not settings.ENABLE_GDELT:
+        return {"error": "GDELT is not enabled"}
+    
+    try:
+        from app.gdelt_simple import SimpleGDELTCollector, progress
+        
+        if progress.is_running:
+            return {"error": "Backfill already running"}
+        
+        # Validate dates
+        try:
+            datetime.strptime(start_date, '%Y-%m-%d')
+            datetime.strptime(end_date, '%Y-%m-%d')
+        except ValueError:
+            return {"error": "Invalid date format. Use YYYY-MM-DD"}
+        
+        # Start backfill in background
+        collector = SimpleGDELTCollector()
+        db = SessionLocal()
+        try:
+            companies = db.query(models.Company).all()
+            company_data = [{"id": c.id, "symbol": c.symbol, "name": c.name} for c in companies]
+        finally:
+            db.close()
+        
+        # Start backfill task in background (don't await)
+        task = asyncio.create_task(collector.run_backfill(company_data, start_date, end_date))
+        # Don't await the task - let it run in background
+        
+        return {
+            "status": "started",
+            "message": f"GDELT backfill started for {start_date} to {end_date}",
+            "monitor_url": "/api/gdelt/progress"
+        }
+        
+    except Exception as e:
+        logger.error(f"GDELT backfill start failed: {e}")
+        return {"error": f"Failed to start backfill: {str(e)}"}
+
+async def run_gdelt_backfill_if_needed():
+    """Run GDELT backfill if no historical data exists"""
+    try:
+        from app.gdelt_simple import SimpleGDELTCollector
+        
+        collector = SimpleGDELTCollector()
+        
+        if not collector.is_available():
+            logger.info("⚠️ GDELT not configured, skipping historical backfill")
+            return
+        
+        db = SessionLocal()
+        try:
+            # Get companies
+            companies = db.query(models.Company).all()
+            company_data = [{"id": c.id, "symbol": c.symbol, "name": c.name} for c in companies]
+            
+            # Check if we have historical data (older than 30 days)
+            cutoff_date = datetime.now() - timedelta(days=30)
+            historical_count = db.query(models.NewsItem).filter(
+                models.NewsItem.published_at < cutoff_date
+            ).count()
+            
+            if historical_count == 0:
+                logger.info("🚀 No historical data found, starting GDELT backfill...")
+                
+                # Backfill last 3 months
+                end_date = datetime.now().strftime('%Y-%m-%d')
+                start_date = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
+                
+                total_added = await collector.run_backfill(company_data, start_date, end_date)
+                logger.info(f"✅ GDELT backfill complete: {total_added} articles added")
+            else:
+                logger.info(f"📊 Found {historical_count} historical articles, skipping backfill")
+                
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"GDELT backfill check failed: {e}")
 
 async def ensure_companies_exist():
     """Ensure companies are seeded in database"""
@@ -282,6 +399,10 @@ async def news_collection_loop():
                     logger.warning("No companies found, skipping collection")
                     await asyncio.sleep(300)  # Wait 5 minutes
                     continue
+                
+                # Update processor with companies
+                if hasattr(processor, 'update_company_knowledge'):
+                    processor.update_company_knowledge(company_data)
                 
                 # Collect and process
                 articles = await collector.collect_for_companies(company_data)

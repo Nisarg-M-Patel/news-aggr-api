@@ -11,3 +11,5 @@ backups/
 .cache/
 
 gcp-key.json
+
+.pytest_cache/
